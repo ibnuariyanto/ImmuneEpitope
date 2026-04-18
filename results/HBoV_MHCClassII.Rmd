@@ -1,0 +1,398 @@
+---
+title: "MHC-II Peptide Binding Analysis for Vaccine Epitope Selection"
+author: "Ibnu Ariyanto"
+date: "`r format(Sys.Date(), '%d %B %Y')`"
+output:
+  html_document:
+    toc: true
+    toc_float: true
+    toc_depth: 3
+    theme: flatly
+    highlight: tango
+    number_sections: true
+    fig_width: 10
+    fig_height: 6
+    df_print: paged
+    code_folding: hide
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(
+echo      = TRUE,
+warning   = FALSE,
+message   = FALSE,
+fig.align = "center",
+dpi       = 150
+)
+```
+
+# Background
+
+This report presents an in-silico MHC-II binding analysis of peptide candidates
+for vaccine epitope selection. Binding affinity was predicted using **NetMHCIIpan**
+(EL method). Lower EL percentile rank indicates stronger predicted binding:
+**<= 2%** = strong binder, **<= 10%** = moderate binder.
+
+---
+
+# Setup
+
+## Load packages
+
+```{r packages}
+# ```{r packages}
+library(tidyverse)
+library(readr)
+library(pheatmap)
+library(factoextra)
+library(ggrepel)
+library(ggseqlogo)
+library(knitr)
+library(kableExtra)
+library(cowplot)
+# ```
+```
+
+## Including Plots
+
+You can also embed plots, for example:
+
+```{r pressure, echo=FALSE}
+# ```{r import}
+df_wide   <- read.csv("D:/06_RCoding/ImmuneEpitope/data/hbov_class2/consolidated_peptide_table_de2f9162.csv",na.string=c("","NA"),header=T, sep =",")
+df_2allele <- read.csv("D:/06_RCoding/ImmuneEpitope/data/hbov_class2/MHCII_consolidated_peptide_table_5182db8f_sort.csv",na.string=c("","NA"),header=T, sep =",")
+df_long   <- read.csv("D:/06_RCoding/ImmuneEpitope/data/hbov_class2/peptide_table_de2f9162.csv",na.string=c("","NA"),header=T, sep =",")
+
+
+# Safe column references (robust to name variation)
+median_col     <- grep("overall",    colnames(df_wide),    value = TRUE)[1]
+global_col     <- grep("global",     colnames(df_2allele), value = TRUE)[1]
+drb12_col      <- grep("DRB1.12",   colnames(df_2allele), value = TRUE)[1]
+drb15_col      <- grep("DRB1.15",   colnames(df_2allele), value = TRUE)[1]
+core_col       <- grep("core",       colnames(df_long),    value = TRUE)[1]
+percentile_col <- grep("percentile", colnames(df_long),    value = TRUE)[1]
+
+cat("Datasets loaded:\n")
+cat(" - df_wide:   ", nrow(df_wide),    "peptides x", ncol(df_wide),    "columns\n")
+cat(" - df_2allele:", nrow(df_2allele), "peptides x", ncol(df_2allele), "columns\n")
+cat(" - df_long:   ", nrow(df_long),    "rows x",     ncol(df_long),    "columns\n")
+# ```
+```
+```{r alelle, echo=FALSE}
+# ```{r tidy}
+df_el <- df_wide %>%
+  select(peptide, starts_with("binding.netmhciipan_el.percentile")) %>%
+  pivot_longer(
+    -peptide,
+    names_to     = "allele",
+    names_prefix = "binding.netmhciipan_el.percentile.",
+    values_to    = "el_percentile"
+  )
+# ```
+```
+
+#Top binder Identification
+```{r binder Identification, echo=FALSE}
+top_binders <- df_wide %>%
+  arrange(.data[[median_col]]) %>%
+  slice_head(n = 20) %>%
+  select(peptide, all_of(median_col))
+
+top_binders %>%
+  kable(
+    caption   = "Top 20 peptides by global median EL percentile (lower = stronger)",
+    col.names = c("Peptide", "Global Median EL Percentile"),
+    digits    = 2
+  ) %>%
+  kable_styling(
+    bootstrap_options = c("striped", "hover", "condensed"),
+    full_width = FALSE
+  ) %>%
+  row_spec(
+    which(top_binders[[median_col]] <= 2),
+    background = "#fde0dc", bold = TRUE
+  ) %>%
+  row_spec(
+    which(top_binders[[median_col]] > 2 & top_binders[[median_col]] <= 10),
+    background = "#fff3cd"
+  )
+```
+
+# Binding Heatmap
+
+```{r heatmap, fig.height=12, fig.width=14}
+heat_mat <- df_wide %>%
+  select(peptide, starts_with("binding.netmhciipan_el.percentile")) %>%
+  column_to_rownames("peptide") %>%
+  as.matrix()
+
+colnames(heat_mat) <- gsub("binding.netmhciipan_el.percentile.", "", colnames(heat_mat))
+
+pheatmap(
+  heat_mat,
+  cluster_rows = TRUE,
+  cluster_cols = TRUE,
+  color        = colorRampPalette(c("#2166ac", "white", "#d73027"))(100),
+  breaks       = seq(0, 100, length.out = 101),
+  fontsize_row = 6,
+  fontsize_col = 7,
+  main         = "MHC-II EL Binding Percentile Heatmap"
+)
+```
+
+# Promiscuous Binder Selection
+
+```{r promiscuous-table}
+coverage <- df_el %>%
+  filter(el_percentile <= 10) %>%
+  group_by(peptide) %>%
+  summarise(n_alleles_covered = n_distinct(allele)) %>%
+  arrange(desc(n_alleles_covered))
+
+coverage %>%
+  slice_head(n = 10) %>%
+  kable(
+    caption   = "Top 10 promiscuous binders (EL <= 10%)",
+    col.names = c("Peptide", "No. of Alleles Covered"),
+    align     = "lr"
+  ) %>%
+  kable_styling(bootstrap_options = c("striped", "hover"), full_width = FALSE)
+```
+
+
+```{r coverage}
+ggplot(coverage,
+       aes(x    = reorder(peptide, n_alleles_covered),
+           y    = n_alleles_covered,
+           fill = n_alleles_covered)) +
+  geom_col() +
+  scale_fill_gradient(low = "#c6dbef", high = "#2166ac") +
+  coord_flip() +
+  labs(
+    title    = "Promiscuous MHC-II Binders (EL <= 10%)",
+    subtitle = sprintf("%d peptides bind >= 1 allele at EL <= 10%%", nrow(coverage)),
+    x        = "Peptide",
+    y        = "Number of Alleles Covered",
+    fill     = "Alleles"
+  ) +
+  theme_minimal(base_size = 10)
+```
+# Allele-Specific Analysis: DRB1*12:02 vs DRB1*15:02
+
+```{r allele-classify}
+df_2allele <- df_2allele %>%
+  mutate(binder_class = case_when(
+    .data[[global_col]] <= 10 ~ "Strong",
+    .data[[global_col]] <= 30 ~ "Moderate",
+    TRUE                      ~ "Weak"
+  ))
+
+n_strong   <- sum(df_2allele$binder_class == "Strong")
+n_moderate <- sum(df_2allele$binder_class == "Moderate")
+```
+
+There are **`r n_strong`** strong binders and **`r n_moderate`** moderate binders
+across both DRB1 alleles.
+
+```{r allele-plot}
+ggplot(df_2allele,
+       aes(x     = .data[[drb12_col]],
+           y     = .data[[drb15_col]],
+           color = binder_class)) +
+  geom_point(size = 2.5, alpha = 0.85) +
+  geom_text_repel(
+    data = df_2allele %>% filter(binder_class == "Strong"),
+    aes(label = peptide), size = 2.5, box.padding = 0.4
+  ) +
+  scale_color_manual(
+    values = c(Strong = "#d73027", Moderate = "#fc8d59", Weak = "grey70")
+  ) +
+  geom_hline(yintercept = 10, linetype = "dashed", color = "grey50", linewidth = 0.4) +
+  geom_vline(xintercept = 10, linetype = "dashed", color = "grey50", linewidth = 0.4) +
+  labs(
+    title    = "DRB1*12:02 vs DRB1*15:02 - Binding Comparison",
+    subtitle = "Labels shown for strong binders only (EL <= 10%)",
+    x        = paste("EL Percentile -", drb12_col),
+    y        = paste("EL Percentile -", drb15_col),
+    color    = "Binder Class",
+    caption  = "Dashed lines = 10th percentile threshold"
+  ) +
+  theme_minimal()
+```
+
+# Core Motif & Positional Analysis
+
+```{r seqlogo, fig.height=3.5}
+cores_top   <- df_long %>% filter(.data[[percentile_col]] <= 5) %>% pull(all_of(core_col))
+n_cores     <- length(cores_top)
+n_pep_logo  <- df_long %>% filter(.data[[percentile_col]] <= 5) %>% pull(peptide) %>% n_distinct()
+n_alle_logo <- df_long %>% filter(.data[[percentile_col]] <= 5) %>% pull(allele)  %>% n_distinct()
+
+ggseqlogo(cores_top, method = "bits") +
+  annotate("rect",
+           xmin = c(0.5, 3.5, 5.5, 8.5), xmax = c(1.5, 4.5, 6.5, 9.5),
+           ymin = -Inf, ymax = Inf, fill = "#fdae61", alpha = 0.2) +
+  annotate("text", x = c(1, 4, 6, 9), y = -0.1,
+           label = "^", color = "#d73027", size = 3) +
+  labs(
+    title    = "MHC-II Core Binding Motif (EL <= 5th percentile)",
+    subtitle = sprintf("%d cores | %d peptides | %d alleles | ^ = anchor P1/P4/P6/P9",
+                       n_cores, n_pep_logo, n_alle_logo),
+    x = "Core Position",
+    y = "Information Content (bits)"
+  )
+
+```
+ 
+```{r pos-dist}
+pos_df <- df_long %>%
+  filter(.data[[percentile_col]] <= 10) %>%
+  distinct(peptide, start, end)
+
+ggplot(pos_df, aes(x = start)) +
+  geom_histogram(binwidth = 20, fill = "#4393c3", color = "white", alpha = 0.85) +
+  geom_rug(aes(x = start), color = "#2166ac", alpha = 0.5) +
+  geom_text(
+    data  = pos_df %>% slice_min(start, n = 5, with_ties = FALSE),
+    aes(x = start, y = 0, label = peptide),
+    angle = 90, vjust = -0.3, hjust = 0, size = 2.5, color = "#d73027"
+  ) +
+  labs(
+    title    = "Positional Distribution of Top Binders (EL <= 10%)",
+    subtitle = sprintf("%d unique peptides", nrow(pos_df)),
+    x        = "Start Position in Antigen (aa)",
+    y        = "Count",
+    caption  = "Rug = individual positions. Red labels = 5 N-terminal-most peptides."
+  ) +
+  theme_minimal(base_size = 11)
+```
+
+# Clustering by Binding Profile
+
+```{r optimal-k, fig.width=10, fig.height=4}
+mat_scaled <- scale(heat_mat)
+
+p_elbow <- fviz_nbclust(mat_scaled, kmeans, method = "wss", k.max = 10) +
+  geom_vline(xintercept = 4, linetype = "dashed", color = "#d73027") +
+  labs(title = "Elbow Method", x = "k", y = "Within-Cluster SS")
+
+p_sil <- fviz_nbclust(mat_scaled, kmeans, method = "silhouette", k.max = 10) +
+  labs(title = "Silhouette Method", x = "k", y = "Avg Silhouette Width")
+
+plot_grid(p_elbow, p_sil, ncol = 2)
+```
+
+
+```{r kmeans}
+set.seed(42)
+k_chosen        <- 4
+km              <- kmeans(mat_scaled, centers = k_chosen, nstart = 25)
+df_wide$cluster <- factor(km$cluster)
+
+pca_res          <- prcomp(mat_scaled)
+pca_df           <- as.data.frame(pca_res$x[, 1:2])
+pca_df$peptide   <- rownames(mat_scaled)
+pca_df$cluster   <- df_wide$cluster
+pca_df$median_el <- df_wide[[median_col]]
+var_exp          <- round(summary(pca_res)$importance[2, 1:2] * 100, 1)
+
+label_df <- pca_df %>%
+  group_by(cluster) %>%
+  slice_min(median_el, n = 3, with_ties = FALSE)
+
+ggplot(pca_df, aes(x = PC1, y = PC2, color = cluster)) +
+  geom_point(aes(size = -median_el), alpha = 0.8) +
+  stat_ellipse(level = 0.85, linetype = "dashed") +
+  geom_label_repel(
+    data = label_df, aes(label = peptide),
+    size = 2.5, box.padding = 0.4, show.legend = FALSE
+  ) +
+  scale_size_continuous(
+    name   = "Binding strength",
+    labels = function(x) paste0(-round(x, 1), "th pctile")
+  ) +
+  labs(
+    title    = "Peptide Clusters by MHC-II Binding Profile (PCA)",
+    subtitle = sprintf("k = %d | Labels = top 3 binders/cluster | Size proportional to binding strength",
+                       k_chosen),
+    x        = sprintf("PC1 (%s%% variance)", var_exp[1]),
+    y        = sprintf("PC2 (%s%% variance)", var_exp[2]),
+    color    = "Cluster",
+    caption  = "Dashed ellipses = 85% confidence regions"
+  ) +
+  theme_minimal(base_size = 11)
+```
+
+```{r cluster-boxplot}
+df_wide %>%
+  ggplot(aes(x = cluster, y = .data[[median_col]], fill = cluster)) +
+  geom_boxplot(outlier.shape = 21, width = 0.5, alpha = 0.8) +
+  geom_jitter(width = 0.15, size = 1.5, alpha = 0.6) +
+  geom_hline(yintercept = c(2, 10), linetype = "dashed",
+             color = c("#d73027", "#fc8d59"), linewidth = 0.7) +
+  annotate("text", x = 0.55, y = 2,
+           label = "Strong (<=2%)",    hjust = 0, size = 3, color = "#d73027") +
+  annotate("text", x = 0.55, y = 10,
+           label = "Moderate (<=10%)", hjust = 0, size = 3, color = "#fc8d59") +
+  labs(
+    title    = "EL Percentile Distribution by Cluster",
+    subtitle = "Lower = stronger MHC-II binder",
+    x        = "Cluster",
+    y        = "Global Median EL Percentile",
+    caption  = "Dashed lines = strong (<=2%) and moderate (<=10%) thresholds"
+  ) +
+  theme_minimal(base_size = 11) +
+  theme(legend.position = "none")
+```
+
+```{r cluster-table}
+df_wide %>%
+  group_by(cluster) %>%
+  summarise(
+    `Peptides (n)`     = n(),
+    `Median EL`        = round(median(.data[[median_col]]), 2),
+    `Min EL`           = round(min(.data[[median_col]]),    2),
+    `Strong (<=2%)`    = sum(.data[[median_col]] <= 2),
+    `Moderate (<=10%)` = sum(.data[[median_col]] <= 10),
+    `Examples`         = paste(head(peptide, 2), collapse = ", ")
+  ) %>%
+  arrange(`Median EL`) %>%
+  kable(caption = "Cluster summary - sorted by median EL percentile") %>%
+  kable_styling(bootstrap_options = c("striped", "hover"), full_width = TRUE)
+```
+
+
+# Final Vaccine Candidate Shortlist
+```{r shortlist}
+final_candidates <- df_wide %>%
+  filter(
+    .data[[median_col]] <= 15,
+    rowSums(select(., starts_with("binding.netmhciipan_el.percentile")) <= 10) >= 10
+  ) %>%
+  arrange(.data[[median_col]]) %>%
+  select(peptide, all_of(median_col), cluster)
+
+write_csv(final_candidates, "final_vaccine_candidates.csv")
+
+final_candidates %>%
+  kable(
+    caption   = sprintf("%d final vaccine epitope candidates (EL <= 15%%, >= 10 alleles covered)",
+                        nrow(final_candidates)),
+    col.names = c("Peptide", "Global Median EL Percentile", "Cluster"),
+    digits    = 2
+  ) %>%
+  kable_styling(
+    bootstrap_options = c("striped", "hover", "bordered"),
+    full_width = FALSE
+  ) %>%
+  row_spec(0, bold = TRUE, background = "#2166ac", color = "white")
+```
+
+
+# Session Info
+
+```{r session-info}
+sessionInfo()
+```
+
+Note that the `echo = FALSE` parameter was added to the code chunk to prevent printing of the R code that generated the plot.

@@ -1,0 +1,107 @@
+---
+title: "MHC Class I Epitope Analysis Pipeline"
+author: "Ibnu Ariyanto"
+date: "`r format(Sys.Date(), '%Y-%m-%d')`"
+output:
+  html_document:
+    toc: true
+    toc_depth: 3
+    number_sections: true
+    theme: flatly
+    code_folding: show
+  pdf_document:
+    toc: true
+    number_sections: true
+fontsize: 11pt
+geometry: margin=1in
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(
+  echo = TRUE,
+  message = FALSE,
+  warning = FALSE,
+  fig.align = "center",
+  fig.width = 8,
+  fig.height = 5,
+  dpi = 300
+)
+```
+## Overview
+
+This report implements a comprehensive MHC Class I epitope analysis pipeline based on NetMHCpan output. It standardizes inputs, assigns binding classes, scores promiscuity across HLA alleles, filters candidates using simple physicochemical features, and exports publication-ready figures and tables.
+
+## 1. Setup & Data Import
+
+### 1.1 Packages
+
+```{r packages, echo=FALSE}
+pkgs <- c(
+  "tidyverse", "ggplot2", "ggrepel", "pheatmap", "RColorBrewer",
+  "viridis", "gridExtra", "knitr", "kableExtra", "writexl",
+  "VennDiagram", "UpSetR", "corrplot", "scales", "patchwork"
+)
+install.packages(setdiff(pkgs, rownames(installed.packages())))
+
+library(tidyverse)
+library(ggplot2)
+library(ggrepel)
+library(pheatmap)
+library(RColorBrewer)
+library(viridis)
+library(gridExtra)
+library(knitr)
+library(kableExtra)
+library(writexl)
+library(VennDiagram)
+library(UpSetR)
+library(corrplot)
+library(scales)
+library(patchwork)
+```
+
+### 1.2 Input files
+
+Update these paths to match your working directory.
+```{r data_import, echo=FALSE}
+df_all    <- readr::read_csv("peptide_table_40dba94e.csv")
+df_pat    <- readr::read_csv("MHCI_peptide_table_e04f7760_sort.csv")
+dist_all  <- readr::read_csv("allele_distances_table_40dba94e.csv")
+dist_pat  <- readr::read_csv("MHCI_allele_distances_table_e04f7760_sort.csv")
+
+# Standardize column names
+
+df_all <- df_all %>%
+  rename_with(tolower) %>%
+  rename(
+    peptide = peptide,
+    allele = allele,
+    el_pct = `netmhcpan_el percentile`,
+    el_score = `netmhcpan_el score`,
+    median_rank = `median binding percentile`
+  )
+
+df_pat <- df_pat %>%
+  rename_with(tolower) %>%
+  rename(
+    peptide = peptide,
+    allele = allele,
+    el_pct = `netmhcpan_el percentile`,
+    el_score = `netmhcpan_el score`,
+    median_rank = `median binding percentile`
+  )
+```
+
+1.3 Quick input checks
+```{Quick unput, echo=FALSE}
+stopifnot(all(c("peptide","allele","el_pct") %in% names(df_all)))
+stopifnot(is.numeric(df_all$el_pct))
+```
+## 2. Binding Classification
+
+NetMHCpan convention (EL %ile):
+
+- Strong binder (SB): EL %ile ≤ 0.5
+- Weak binder (WB): EL %ile ≤ 2.0
+- Non-binder (NB): otherwise
+

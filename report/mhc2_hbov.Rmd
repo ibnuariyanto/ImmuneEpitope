@@ -1,0 +1,33 @@
+---
+title: "MHC Class II HBoV"
+author: "Ibnu A"
+date: "2026-04-18"
+output: html_document
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+```
+
+## R Analysis — MHC-II Peptide Binding Data
+
+This page outlines a structured R analysis pipeline for the three attached MHC-II peptide binding datasets:
+
+- **`consolidated_peptide_table`** — 74 unique peptides × 27 HLA alleles (EL & median percentiles)
+- **`MHCII_consolidated_peptide_table_sort`** — 133 peptides × HLA-DRB1*12:02 & *15:02 (sorted by global median)
+- **`peptide_table`** — Long-format per-allele records with binding scores & core motifs
+
+```{r cars}
+summary(cars)
+```
+
+## Including Plots
+
+You can also embed plots, for example:
+
+```{r pressure, echo=FALSE}
+plot(pressure)
+```
+
+Note that the `echo = FALSE` parameter was added to the code chunk to prevent printing of the R code that generated the plot.
+_A

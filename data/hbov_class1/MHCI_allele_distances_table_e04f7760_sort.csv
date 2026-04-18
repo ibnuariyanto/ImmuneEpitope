@@ -1,0 +1,5 @@
+input allele,closest allele,distance
+HLA-A*11:01,HLA-A*11:01,0
+HLA-A*24:07,HLA-A*24:02,0.034
+HLA-B*15:02,HLA-B*15:02,0
+HLA-B*35:05,HLA-B*35:01,0.039
