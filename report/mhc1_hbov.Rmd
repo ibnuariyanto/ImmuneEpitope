@@ -1,30 +1,34 @@
 ---
 title: "MHC Class I Epitope Analysis Pipeline"
 author: "Ibnu Ariyanto"
-date: "`r format(Sys.Date(), '%Y-%m-%d')`"
+date: "`r format(Sys.Date(), '%d %B %Y')`"
 output:
-  html_document:
-    toc: true
-    toc_depth: 3
-    number_sections: true
-    theme: flatly
-    code_folding: show
   pdf_document:
     toc: true
+    toc_depth: '3'
+  word_document:
+    toc: true
+    toc_depth: '3'
+  html_document:
+    toc: true
+    toc_float: true
+    toc_depth: 3
+    theme: flatly
+    highlight: tango
     number_sections: true
-fontsize: 11pt
-geometry: margin=1in
+    fig_width: 10
+    fig_height: 6
+    df_print: paged
+    code_folding: hide
 ---
 
 ```{r setup, include=FALSE}
 knitr::opts_chunk$set(
-  echo = TRUE,
-  message = FALSE,
-  warning = FALSE,
-  fig.align = "center",
-  fig.width = 8,
-  fig.height = 5,
-  dpi = 300
+echo      = TRUE,
+warning   = FALSE,
+message   = FALSE,
+fig.align = "center",
+dpi       = 300
 )
 ```
 ## Overview
@@ -64,39 +68,41 @@ library(patchwork)
 
 Update these paths to match your working directory.
 ```{r data_import, echo=FALSE}
-df_all    <- readr::read_csv("peptide_table_40dba94e.csv")
-df_pat    <- readr::read_csv("MHCI_peptide_table_e04f7760_sort.csv")
-dist_all  <- readr::read_csv("allele_distances_table_40dba94e.csv")
-dist_pat  <- readr::read_csv("MHCI_allele_distances_table_e04f7760_sort.csv")
+df_all    <- read.csv("D:/06_RCoding/ImmuneEpitope/data/hbov_class1/peptide_table_40dba94e.csv",na.string=c("","NA"),header=T, sep =",")
+
+df_pat    <- read.csv("D:/06_RCoding/ImmuneEpitope/data/hbov_class1/MHCI_peptide_table_e04f7760_sort.csv",na.string=c("","NA"),header=T, sep =",")
+
+dist_all <- read.csv(
+  "D:/06_RCoding/ImmuneEpitope/data/hbov_class1/allele_distances_table_40dba94e.csv",
+  header = TRUE,
+  na.strings = c("", "NA")
+)
+
+dist_pat  <- read.csv("D:/06_RCoding/ImmuneEpitope/data/hbov_class1/MHCI_allele_distances_table_e04f7760_sort.csv",na.string=c("","NA"),header=T, sep =",")
+
 
 # Standardize column names
+df_all <- df_all %>% rename_with(tolower) %>%
+  rename(peptide = peptide,
+         allele  = allele,
+         el_pct  = `netmhcpan_el.percentile`,
+         el_score= `netmhcpan_el.score`,
+         median_rank = `median.binding.percentile`)
 
-df_all <- df_all %>%
-  rename_with(tolower) %>%
-  rename(
-    peptide = peptide,
-    allele = allele,
-    el_pct = `netmhcpan_el percentile`,
-    el_score = `netmhcpan_el score`,
-    median_rank = `median binding percentile`
-  )
-
-df_pat <- df_pat %>%
-  rename_with(tolower) %>%
-  rename(
-    peptide = peptide,
-    allele = allele,
-    el_pct = `netmhcpan_el percentile`,
-    el_score = `netmhcpan_el score`,
-    median_rank = `median binding percentile`
-  )
+df_pat <- df_pat %>% rename_with(tolower) %>%
+  rename(peptide = peptide,
+         allele  = allele,
+         el_pct  = `netmhcpan_el.percentile`,
+         el_score= `netmhcpan_el.score`,
+         median_rank = `median.binding.percentile`)
 ```
 
-1.3 Quick input checks
-```{Quick unput, echo=FALSE}
+### 1.3 Quick input checks
+```{r input_checks, echo=FALSE}
 stopifnot(all(c("peptide","allele","el_pct") %in% names(df_all)))
 stopifnot(is.numeric(df_all$el_pct))
 ```
+
 ## 2. Binding Classification
 
 NetMHCpan convention (EL %ile):
@@ -104,4 +110,297 @@ NetMHCpan convention (EL %ile):
 - Strong binder (SB): EL %ile ≤ 0.5
 - Weak binder (WB): EL %ile ≤ 2.0
 - Non-binder (NB): otherwise
+
+```{r binding_classification, echo=FALSE}
+classify_binding <- function(df) {
+  df %>%
+    mutate(
+      binding_class = case_when(
+        el_pct <= 0.5 ~ "Strong Binder (SB)",
+        el_pct <= 2.0 ~ "Weak Binder (WB)",
+        TRUE ~ "Non-Binder (NB)"
+      ),
+      binding_class = factor(
+        binding_class,
+        levels = c("Strong Binder (SB)", "Weak Binder (WB)", "Non-Binder (NB)")
+      )
+    )
+}
+
+df_all <- classify_binding(df_all)
+df_pat <- classify_binding(df_pat)
+
+bind_summary <- df_all %>%
+  count(binding_class) %>%
+  mutate(pct = round(n / sum(n) * 100, 2))
+
+knitr::kable(bind_summary, caption = "Binding class summary") %>%
+  kableExtra::kable_styling(full_width = FALSE)
+```
+
+
+## 3. Promiscuity Scoring
+
+Scoring:
+
+- SB = 2 points
+- WB = 1 point
+- Promiscuous: binds ≥ 3 alleles (SB+WB)
+
+```{r promiscuity_scoring, echo=FALSE}
+promiscuity <- df_all %>%
+  filter(binding_class != "Non-Binder (NB)") %>%
+  group_by(peptide) %>%
+  summarise(
+    n_alleles_total = n_distinct(allele),
+    n_SB = sum(binding_class == "Strong Binder (SB)"),
+    n_WB = sum(binding_class == "Weak Binder (WB)"),
+    promiscuity_score = n_SB * 2 + n_WB,
+    best_el_pct = min(el_pct),
+    median_el_pct = median(el_pct),
+    alleles_bound = paste(sort(unique(allele)), collapse = "; "),
+    .groups = "drop"
+  ) %>%
+  mutate(
+    is_promiscuous = n_alleles_total >= 3,
+    tier = case_when(
+      n_SB >= 3 ~ "Tier 1 - Highly Promiscuous SB",
+      n_SB >= 1 & n_alleles_total >= 3 ~ "Tier 1 - Promiscuous",
+      n_alleles_total >= 2 ~ "Tier 2 - Moderately Promiscuous",
+      TRUE ~ "Tier 3 - Single Allele"
+    )
+  ) %>%
+  arrange(desc(promiscuity_score), best_el_pct)
+
+top_candidates <- promiscuity %>%
+  filter(tier %in% c("Tier 1 - Highly Promiscuous SB", "Tier 1 - Promiscuous"))
+
+cat("Top epitope candidates:", nrow(top_candidates), "\n")
+```
+## 4. Visualizations
+
+### Fig 1 — Binding Distribution per Allele
+
+```{r fig1_binding_distribution, echo=FALSE}
+p1 <- df_all %>%
+  count(allele, binding_class) %>%
+  ggplot(aes(x = reorder(allele, -n), y = n, fill = binding_class)) +
+  geom_bar(stat = "identity", position = "stack") +
+  scale_fill_manual(values = c(
+    "Strong Binder (SB)" = "#d73027",
+    "Weak Binder (WB)" = "#fc8d59",
+    "Non-Binder (NB)" = "#e0e0e0"
+  )) +
+  labs(
+    title = "MHC Class I Binding Distribution per Allele",
+    x = "HLA Allele",
+    y = "Number of Peptides",
+    fill = "Binding Class"
+  ) +
+  theme_classic(base_size = 12) +
+  theme(axis.text.x = element_text(angle = 45, hjust = 1), legend.position = "top")
+
+p1
+```
+
+### Fig 2 — Promiscuity Score Histogram
+
+```{r fig2_promiscuity_distribution, echo=FALSE}
+p2 <- promiscuity %>%
+  ggplot(aes(x = promiscuity_score, fill = tier)) +
+  geom_histogram(binwidth = 1, color = "white", alpha = 0.85) +
+  scale_fill_brewer(palette = "Set1") +
+  labs(
+    title = "Peptide Promiscuity Score Distribution",
+    x = "Promiscuity Score (SB=2, WB=1)",
+    y = "Number of Peptides",
+    fill = "Tier"
+  ) +
+  theme_classic(base_size = 12)
+
+p2
+```
+
+### Fig 3 — Binding Heatmap (Top 30 × All Alleles)
+
+```{r fig3_binding_heatmap, echo=FALSE}
+top30 <- top_candidates$peptide[1:min(30, nrow(top_candidates))]
+
+heat_mat <- df_all %>%
+  filter(peptide %in% top30) %>%
+  select(peptide, allele, el_pct) %>%
+  pivot_wider(names_from = allele, values_from = el_pct, values_fn = min, values_fill = 100) %>%
+  tibble::column_to_rownames("peptide") %>%
+  as.matrix()
+
+heat_mat_capped <- pmin(heat_mat, 5)
+
+pheatmap::pheatmap(
+  heat_mat_capped,
+  color = colorRampPalette(c("#d73027", "#fc8d59", "#fee090", "#e0f3f8", "#f0f0f0"))(100),
+  breaks = seq(0, 5, length.out = 101),
+  cluster_rows = TRUE,
+  cluster_cols = TRUE,
+  fontsize_row = 7,
+  fontsize_col = 8,
+  main = "EL%ile Heatmap: Top Candidates x HLA Alleles (capped at 5%)"
+)
+```
+
+### Fig 4 — Bubble Plot (Promiscuity vs Binding)
+
+```{r fig4_bubble_promiscuity, echo=FALSE}
+p4 <- promiscuity %>%
+  filter(n_alleles_total >= 2) %>%
+  ggplot(aes(x = best_el_pct, y = n_alleles_total, size = promiscuity_score, color = tier)) +
+  geom_point(alpha = 0.7) +
+  ggrepel::geom_text_repel(
+    data = . %>%
+      filter(tier %in% c("Tier 1 - Highly Promiscuous SB", "Tier 1 - Promiscuous")) %>%
+      slice_min(best_el_pct, n = 15),
+    aes(label = peptide),
+    size = 3,
+    max.overlaps = 20
+  ) +
+  scale_x_continuous(limits = c(0, 2.5)) +
+  scale_color_brewer(palette = "Set1") +
+  scale_size_continuous(range = c(2, 10)) +
+  labs(
+    title = "Epitope Candidates: Binding Affinity vs Promiscuity",
+    x = "Best EL Percentile (lower = stronger)",
+    y = "Number of Alleles Bound",
+    size = "Promiscuity Score",
+    color = "Tier"
+  ) +
+  theme_classic(base_size = 12)
+
+p4
+```
+
+### Fig 5 — Patient-Specific Allele Violin Plot
+
+```{r fig5_patient_alleles, echo=FALSE}
+df_pat %>%
+
+filter(binding_class != "Non-Binder (NB)") %>%
+
+count(allele, binding_class) %>%
+
+print()
+
+
+p5 <- df_pat %>%
+
+  filter(binding_class != "Non-Binder (NB)") %>%
+
+  ggplot(aes(x = allele, y = el_pct, fill = binding_class)) +
+
+  geom_violin(alpha = 0.55, trim = FALSE, scale = "width",
+
+  colour = NA, adjust = 1.2) +
+
+  geom_jitter(width = 0.12, height = 0, size = 0.9,
+  
+  alpha = 0.6, colour = "grey20") +
+
+  stat_summary(fun = median, geom = "crossbar",
+
+  width = 0.35, fatten = 1.2, colour = "black") +
+
+  facet_wrap(~ binding_class, scales = "free_y") +
+
+  scale_fill_manual(values = c(
+
+"Strong Binder (SB)" = "#d73027",
+
+"Weak Binder (WB)"   = "#fc8d59"
+
+)) +
+
+coord_cartesian(ylim = c(0, 2.1)) +     # zoom, do NOT clip
+
+labs(
+
+title = "EL Percentile Distribution — Patient-Specific HLA Alleles",
+
+x = "HLA Allele", y = "EL Percentile (%)", fill = "Binding Class"
+
+) +
+
+theme_classic(base_size = 12) +
+
+theme(axis.text.x = element_text(angle = 45, hjust = 1),
+
+legend.position = "top")
+
+p5
+
+```
+
+## 5. Physicochemical Properties
+
+```{r calc_properties, echo=FALSE}
+calc_properties <- function(peptide_seq) {
+  aa <- strsplit(peptide_seq, "")[[1]]
+  hydrophobic <- c("A", "V", "I", "L", "M", "F", "W", "P")
+  charged_pos <- c("K", "R", "H")
+  charged_neg <- c("D", "E")
+
+  tibble(
+    length = nchar(peptide_seq),
+    pct_hydrophobic = mean(aa %in% hydrophobic) * 100,
+    n_charged_pos = sum(aa %in% charged_pos),
+    n_charged_neg = sum(aa %in% charged_neg),
+    net_charge = sum(aa %in% charged_pos) - sum(aa %in% charged_neg),
+    has_cysteine = "C" %in% aa,
+    n_aromatic = sum(aa %in% c("F", "W", "Y"))
+  )
+}
+
+top_candidates_props <- top_candidates %>%
+  bind_cols(purrr::map_dfr(top_candidates$peptide, calc_properties)) %>%
+  mutate(
+    anchor_P2 = substr(peptide, 2, 2),
+    anchor_Ctm = substr(peptide, nchar(peptide), nchar(peptide)),
+    anchor_ok = anchor_Ctm %in% c("L", "I", "V", "M", "F", "Y", "K", "R")
+  )
+```
+
+## 6. Final Candidate Table & Export
+
+```{r final_table, echo=FALSE}
+final_table <- top_candidates_props %>%
+  filter(tier %in% c("Tier 1 - Highly Promiscuous SB", "Tier 1 - Promiscuous")) %>%
+  select(
+    peptide, tier, n_SB, n_WB, n_alleles_total,
+    promiscuity_score, best_el_pct, median_el_pct,
+    pct_hydrophobic, net_charge, anchor_P2, anchor_Ctm, anchor_ok,
+    alleles_bound
+  ) %>%
+  arrange(desc(promiscuity_score), best_el_pct)
+
+final_table %>%
+  knitr::kable(digits = 3, caption = "Table 1. Final MHC Class I Epitope Candidates") %>%
+  kableExtra::kable_styling(bootstrap_options = c("striped", "hover", "condensed"), full_width = FALSE) %>%
+  kableExtra::row_spec(which(final_table$tier == "Tier 1 - Highly Promiscuous SB"), bold = TRUE, background = "#fff3cd")
+```
+
+
+## 7. Reproducibility
+
+```{r session_info, echo=FALSE}
+writeLines(capture.output(sessionInfo()), "session_info.txt")
+```
+
+## Output files generated by this analysis:
+
+- Fig1_binding_distribution (embedded in report)
+- Fig2_promiscuity_distribution (embedded in report)
+- Fig3_binding_heatmap (embedded in report)
+- Fig4_bubble_promiscuity (embedded in report)
+- Fig5_patient_alleles (embedded in report)
+- Supplementary_Table_S1_Epitope_Candidates.xlsx
+- session_info.txt
+
+
 

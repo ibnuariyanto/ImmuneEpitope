@@ -14,6 +14,12 @@ output:
     fig_height: 6
     df_print: paged
     code_folding: hide
+  word_document:
+    toc: true
+    toc_depth: '3'
+  pdf_document:
+    toc: true
+    toc_depth: '3'
 ---
 
 ```{r setup, include=FALSE}

@@ -182,3 +182,163 @@ p4 <- promiscuity %>%
 p4
 
 ggsave("Fig4_bubble_promiscuity.pdf", p4, width = 10, height = 7, dpi = 300)
+
+
+
+df_pat %>%
+  
+  filter(binding_class != "Non-Binder (NB)") %>%
+  
+  count(allele, binding_class) %>%
+  
+  print()
+
+p5 <- df_pat %>%
+  
+  filter(binding_class != "Non-Binder (NB)") %>%
+  ggplot(aes(x = allele, y = el_pct, fill = binding_class)) +
+  geom_violin(alpha = 0.55, trim = FALSE, scale = "width",
+              
+              colour = NA, adjust = 1.2) +
+  
+  geom_jitter(width = 0.12, height = 0, size = 0.9,
+              
+              alpha = 0.6, colour = "grey20") +
+  
+  stat_summary(fun = median, geom = "crossbar",
+               
+               width = 0.35, fatten = 1.2, colour = "black") +
+  
+  facet_wrap(~ binding_class, scales = "free_y") +
+  
+  scale_fill_manual(values = c(
+    
+    "Strong Binder (SB)" = "#d73027",
+    
+    "Weak Binder (WB)"   = "#fc8d59"
+    
+  )) +
+  
+  coord_cartesian(ylim = c(0, 2.1)) +     # zoom, do NOT clip
+  
+  labs(
+    
+    title = "EL Percentile Distribution — Patient-Specific HLA Alleles",
+    
+    x = "HLA Allele", y = "EL Percentile (%)", fill = "Binding Class"
+    
+  ) +
+  
+  theme_classic(base_size = 12) +
+  
+  theme(axis.text.x = element_text(angle = 45, hjust = 1),
+        
+        legend.position = "top")
+
+p5
+
+# ============================================================
+# 5. PHYSICOCHEMICAL PROPERTIES (Peptide-level)
+# ============================================================
+
+calc_properties <- function(peptide_seq) {
+  aa <- strsplit(peptide_seq, "")[[1]]
+  hydrophobic <- c("A","V","I","L","M","F","W","P")
+  charged_pos <- c("K","R","H")
+  charged_neg <- c("D","E")
+  
+  tibble(
+    length          = nchar(peptide_seq),
+    pct_hydrophobic = mean(aa %in% hydrophobic) * 100,
+    n_charged_pos   = sum(aa %in% charged_pos),
+    n_charged_neg   = sum(aa %in% charged_neg),
+    net_charge      = sum(aa %in% charged_pos) - sum(aa %in% charged_neg),
+    has_cysteine    = "C" %in% aa,
+    n_aromatic      = sum(aa %in% c("F","W","Y"))
+  )
+}
+
+# Apply to top candidates
+top_candidates_props <- top_candidates %>%
+  bind_cols(map_dfr(top_candidates$peptide, calc_properties)) %>%
+  mutate(
+    anchor_P2   = substr(peptide, 2, 2),
+    anchor_Ctm  = substr(peptide, nchar(peptide), nchar(peptide)),
+    anchor_ok   = anchor_Ctm %in% c("L","I","V","M","F","Y","K","R")
+  )
+
+
+
+calc_properties <- function(peptide_seq) {
+  aa <- strsplit(peptide_seq, "")[[1]]
+  hydrophobic <- c("A","V","I","L","M","F","W","P")
+  charged_pos <- c("K","R","H")
+  charged_neg <- c("D","E")
+  tibble::tibble(
+    length          = nchar(peptide_seq),
+    pct_hydrophobic = mean(aa %in% hydrophobic) * 100,
+    n_charged_pos   = sum(aa %in% charged_pos),
+    n_charged_neg   = sum(aa %in% charged_neg),
+    net_charge      = sum(aa %in% charged_pos) - sum(aa %in% charged_neg),
+    has_cysteine    = "C" %in% aa,
+    n_aromatic      = sum(aa %in% c("F","W","Y"))
+  )
+}
+
+props <- purrr::map(top_candidates$peptide, calc_properties) |>
+  purrr::list_rbind()
+top_candidates_props <- top_candidates %>%
+  dplyr::bind_cols(props) %>%
+  dplyr::mutate(
+    anchor_P2  = substr(peptide, 2, 2),
+    anchor_Ctm = substr(peptide, nchar(peptide), nchar(peptide)),
+    anchor_ok  = anchor_Ctm %in% c("L","I","V","M","F","Y","K","R")
+  )
+
+top_candidates_props %>%
+  dplyr::select(peptide, length, pct_hydrophobic, net_charge,
+                has_cysteine, n_aromatic,
+                anchor_P2, anchor_Ctm, anchor_ok,
+                tier, promiscuity_score, best_el_pct) %>%
+  dplyr::arrange(dplyr::desc(promiscuity_score), best_el_pct) %>%
+  knitr::kable(
+    digits  = 2,
+    caption = "Physicochemical properties of top epitope candidates"
+  ) %>%
+  kableExtra::kable_styling(
+    bootstrap_options = c("striped", "hover", "condensed"),
+    full_width = FALSE
+  )
+# ============================================================
+# 6. FINAL EPITOPE CANDIDATE TABLE
+# ============================================================
+
+final_table <- top_candidates_props %>%
+  filter(tier %in% c("Tier 1 - Highly Promiscuous SB","Tier 1 - Promiscuous")) %>%
+  select(peptide, tier, n_SB, n_WB, n_alleles_total,
+         promiscuity_score, best_el_pct, median_el_pct,
+         pct_hydrophobic, net_charge, anchor_P2, anchor_Ctm, anchor_ok,
+         alleles_bound) %>%
+  arrange(desc(promiscuity_score), best_el_pct)
+
+# Print formatted table
+final_table %>%
+  kable(digits = 3, caption = "Table 1. Final MHC Class I Epitope Candidates") %>%
+  kable_styling(bootstrap_options = c("striped","hover","condensed"),
+                full_width = FALSE) %>%
+  row_spec(which(final_table$tier == "Tier 1 - Highly Promiscuous SB"),
+           bold = TRUE, background = "#fff3cd")
+
+# Export to Excel
+write_xlsx(
+  list(
+    "Final_Candidates"     = final_table,
+    "All_Promiscuity"      = promiscuity,
+    "Binding_Summary"      = bind_summary,
+    "Patient_Alleles"      = df_pat %>% filter(binding_class != "Non-Binder (NB)")
+  ),
+  "Supplementary_Table_S1_Epitope_Candidates.xlsx"
+)
+
+cat("Analysis complete.\n")
+cat("Final epitope candidates:", nrow(final_table), "\n")
