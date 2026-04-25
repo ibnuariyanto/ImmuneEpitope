@@ -1,0 +1,24 @@
+peptide,methods_pass,methods_tested,methods_passed_list,total_allele_hits,best_min_pct,consensus_class,el_n_moderate,el_min_pct,el_median,cluster
+LFQYGYIPIENELAD,3,3,"NetMHCIIpan_EL, SMM_align, Sturniolo",31,0.09,Full consensus,20,0.09,6,1
+NLQIKQILSNGADTT,3,3,"NetMHCIIpan_EL, SMM_align, Sturniolo",28,0.96,Full consensus,15,0.96,9.9,1
+TIFIKMAKIPVPTAS,3,3,"NetMHCIIpan_EL, SMM_align, Sturniolo",24,0.09,Full consensus,7,1.4,17,1
+GSSFFKIKRAVAPAL,3,3,"NetMHCIIpan_EL, SMM_align, Sturniolo",20,0.01,Full consensus,7,0.01,17,1
+KYVVTKNTRQFITTI,3,3,"NetMHCIIpan_EL, SMM_align, Sturniolo",13,0.23,Full consensus,6,3.7,26,4
+QVKIYNLQIKQILSN,3,3,"NetMHCIIpan_EL, SMM_align, Sturniolo",13,0.45,Full consensus,6,0.95,19,1
+EYKRFRPKAMQVKIY,3,3,"NetMHCIIpan_EL, SMM_align, Sturniolo",12,1.6,Full consensus,4,4.2,36,4
+AQKRHFYFANSNKGA,2,3,"NetMHCIIpan_EL, SMM_align",27,0.07,Majority consensus,22,0.07,4,1
+VQYIRQNGSTAASTG,2,3,"NetMHCIIpan_EL, SMM_align",20,0.14,Majority consensus,10,0.14,16,1
+GNNGNIIANPSLSML,2,3,"NetMHCIIpan_EL, SMM_align",19,0.26,Majority consensus,9,0.26,24,1
+SHFSDKYVVTKNTRQ,2,3,"NetMHCIIpan_EL, SMM_align",16,0.23,Majority consensus,10,1.3,25,1
+TEKALLYQMPFFLLE,2,3,"NetMHCIIpan_EL, SMM_align",14,0.08,Majority consensus,3,4.5,67,4
+IGGIIGSSFFKIKRA,2,3,"NetMHCIIpan_EL, SMM_align",13,0.11,Majority consensus,8,0.11,25,1
+QRLTNEYKRFRPKAM,2,3,"SMM_align, Sturniolo",13,1.6,Majority consensus,2,5.5,42,4
+GADTTYNNDLTAGVH,2,3,"NetMHCIIpan_EL, SMM_align",11,0.34,Majority consensus,6,0.34,29,1
+YKTWKLFQYGYIPIE,2,3,"SMM_align, Sturniolo",10,0.55,Majority consensus,2,4.2,40,4
+CEWVNNERAYIPPGL,2,3,"NetMHCIIpan_EL, Sturniolo",10,1.4,Majority consensus,3,6.5,60,4
+KIKRAVAPALGNKER,2,3,"NetMHCIIpan_EL, SMM_align",9,0.01,Majority consensus,5,0.01,20,1
+KNTRQFITTIQNGHL,2,3,"NetMHCIIpan_EL, SMM_align",9,0.12,Majority consensus,4,0.12,23,1
+TPWTYFNFNQYSCHF,2,3,"NetMHCIIpan_EL, SMM_align",9,0.94,Majority consensus,4,4,58,4
+SELIKSGKNPYLYFN,2,3,"NetMHCIIpan_EL, SMM_align",9,1.5,Majority consensus,4,3.3,24,1
+IPPGLMFNPKVPTRR,2,3,"NetMHCIIpan_EL, SMM_align",8,0.55,Majority consensus,5,0.88,31,4
+KADEKFIDDLKDDWS,2,3,"NetMHCIIpan_EL, SMM_align",7,3.8,Majority consensus,3,3.9,53,2
